@@ -1,0 +1,40 @@
+package com.idan.serverSide.entities;
+
+import com.idan.PlayerType;
+
+public class PlayerInfo extends BaseEntity {
+    private String name;
+    private int size;
+    private PlayerType type;
+
+    public PlayerInfo(String name, int size, PlayerType type) {
+        super();
+        this.name = name;
+        this.size = size;
+        this.type = type;
+    }
+    public PlayerInfo(int playerID, String name, int size, PlayerType type) {
+        super(playerID);
+        this.name = name;
+        this.size = size;
+        this.type = type;
+    }
+    public int getPlayerID() {
+        return this.getID();
+    }
+    public void setPlayerID(int playerID) {
+        this.setID(playerID);
+    }
+    public PlayerType getType() {
+        return type;
+    }
+    public String getName() {
+        return this.name;
+    }
+    public int getSize() {
+        return this.size;
+    }
+    public void setSize(int size) {
+        this.size = size;
+    }
+}
