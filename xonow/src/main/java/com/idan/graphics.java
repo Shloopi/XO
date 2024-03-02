@@ -1,10 +1,12 @@
 package com.idan;
 
 import javafx.application.Application;
+import javafx.event.EventHandler;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
 import javafx.stage.Stage;
+import javafx.stage.WindowEvent;
 
 import java.io.IOException;
 
@@ -18,7 +20,7 @@ public class graphics extends Application {
     private static String name;
     private static int size;
     private static gameController gc;
-    private static Client client;
+    private static Client client = null;
     private static graphics graphicsController;
     
     @SuppressWarnings("exports")
@@ -51,6 +53,24 @@ public class graphics extends Application {
         Scene scene = new Scene(fxmlLoader.load());
 
         graphics.stage.setScene(scene);
+        
+        setOnClose(graphics.size + "", "waiting");
+
+    }
+    public void setOnClose(String parameter, String message) {
+        graphics.stage.setOnCloseRequest(new EventHandler<WindowEvent>() {
+            @Override
+            public void handle(WindowEvent event) {                
+                // tell the server to disconnect the client.
+                if (graphics.client != null) {
+                    try {
+                        graphics.client.sendMessage("7~" + parameter + "~" + message);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        });
     }
 
     public void startGame(String opponentName, boolean isX) throws IOException {
@@ -64,6 +84,9 @@ public class graphics extends Application {
         
         // set the scene.
         graphics.stage.setScene(scene);
+
+        setOnClose(graphics.name, "playing");
+
     }
     public void sendMove(int row, int column, boolean isX) {
         // get the type.
@@ -86,7 +109,7 @@ public class graphics extends Application {
         graphics.gc.draw();
     }
     public static void main(String[] args) {
-        launch();
+        launch(args);
     }
 
 }

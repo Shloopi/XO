@@ -18,6 +18,7 @@ public class Server {
     private PlayerInfo[] waitingClients;
     private HashMap<Integer, ClientInfo> clients;
     private HashMap<Integer, Game> games;
+    private HashMap<Integer, PlayerInfo> players;
     private final int PORT = 7486;
     private DBHandler dbHandler;
 
@@ -26,6 +27,7 @@ public class Server {
 
         this.games = new HashMap<>();
         this.clients = new HashMap<>();
+        this.players = new HashMap<>();
 
         // create an array for waiting clients. keep them until we find them a game
         this.waitingClients = new PlayerInfo[9];
@@ -63,7 +65,7 @@ public class Server {
             String msg;
             
             // as long as the socket is open.
-            while (!clientSocket.isClosed()) {
+            while (clientSocket.isConnected()) {
                 // keep receiving messages.
                 msg = this.receiveMessage(inputStream);
 
@@ -71,16 +73,18 @@ public class Server {
                 this.handleMessage(clientInfo, msg);
             }
         } catch (IOException e) {
+            this.closeClient(clientSocket);
             e.printStackTrace();
         } 
         finally {
         }
     }
-    public void sendMessage(OutputStream outputStream, String message) {
+    public void sendMessage(ClientInfo client, String message) {
         try {
             // Send a response to the client
-            outputStream.write(message.getBytes());
+            client.getOutput().write(message.getBytes());
         } catch (IOException e) {
+            this.closeClient(client.getSocket());
             e.printStackTrace();
         }
     }
@@ -88,18 +92,25 @@ public class Server {
     private String receiveMessage(InputStream inputStream) throws IOException {
         String msg = "";
         byte[] buffer = new byte[1024];
+        int bytesRead = 0;
 
-        // try to read a message.
-        int bytesRead = inputStream.read(buffer);
-
-        // if we were able to read the message.
-        if (bytesRead > 0) {
-            msg = new String(buffer, 0, bytesRead);
+        try {
+            // try to read a message.
+            bytesRead = inputStream.read(buffer);
+        }
+        catch (IOException e) {
+        }
+        finally {
+            // if we were able to read the message.
+            if (bytesRead > 0) {
+                msg = new String(buffer, 0, bytesRead);
+            }
         }
         return msg;
     }
     private void handleMessage(ClientInfo client, String msg) {
         if (msg != "") {
+            System.out.println(msg);
             // each parameter is divided by '~'. split the parameters in the message.
             String[] splittedMessage = msg.split("~");
 
@@ -115,7 +126,7 @@ public class Server {
 
                     // size 0 is not possible.
                     if (size == 0) {
-                        this.sendMessage(client.getOutput(), "Error: board size must be an integer 1 - 9");
+                        this.sendMessage(client, "Error: board size must be an integer 1 - 9");
                     }
                     // size is correct.
                     else {
@@ -124,7 +135,7 @@ public class Server {
 
                         // if the server can start a game. 
                         if (!canStartGame) {
-                            this.sendMessage(client.getOutput(), "1~waiting");
+                            this.sendMessage(client, "1~waiting");
                         }
                         else {
                             // get the player from the db.
@@ -141,6 +152,7 @@ public class Server {
 
                             // get the playerInfo for X player.
                             PlayerInfo playerX = this.waitingClients[size - 1];
+                            this.waitingClients[size - 1] = null;
 
                             // insert the game into the db.
                             Game game = new Game(playerX, playerO);
@@ -150,15 +162,22 @@ public class Server {
                             this.games.put(gameID, game);
                             
                             // send messages to the clients to start the game.
-                            this.sendMessage(this.clients.get(playerX.getPlayerID()).getOutput(), "2~" + gameID + "~X~" + name);
-                            this.sendMessage(client.getOutput(), "2~" + gameID + "~O~" + playerX.getName());
+                            this.sendMessage(this.clients.get(playerX.getPlayerID()), "2~" + gameID + "~X~" + name);
+                            this.sendMessage(client, "2~" + gameID + "~O~" + playerX.getName());
+
+                            // add the gameID into the information about the players.
+                            playerO.setGameID(gameID);
+                            playerX.setGameID(gameID);
+
+                            // add the players to the hash map.
+                            this.players.put(playerX.getID(), playerX);
+                            this.players.put(playerO.getID(), playerO);
                         }
                     }
                 }                
             }
             // if the server received a move.
             else if (splittedMessage[0].equals("3") && splittedMessage.length == 5) {
-                System.out.println("RECEIVED MOVE");
                 int gameID, row, column;
 
                 // check if the gameID, row and columns are integers.
@@ -190,13 +209,9 @@ public class Server {
                         // update the winner in the game.
                         this.dbHandler.getGameDB().updateWinner(gameID, playerWinner.getPlayerID());
 
-                        // get the output streams of the winner and the loser.
-                        OutputStream winnerOutput = this.clients.get(playerWinner.getPlayerID()).getOutput();
-                        OutputStream loserOutput = this.clients.get(playerLoser.getPlayerID()).getOutput();
-
                         // send a message to inform the players that the game is over and that one won.
-                        this.sendMessage(winnerOutput, "9~W~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
-                        this.sendMessage(loserOutput, "9~L~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
+                        this.sendMessage(this.clients.get(playerWinner.getPlayerID()), "9~W~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
+                        this.sendMessage(this.clients.get(playerLoser.getPlayerID()), "9~L~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
                         
                         // finish the game.
                         this.finishGame(gameID);
@@ -209,17 +224,76 @@ public class Server {
                         this.dbHandler.getGameDB().updateWinner(gameID, 0);
 
                         // send a message to inform the players that the game is over and that it's a draw.
-                        this.sendMessage(this.clients.get(game.getXPlayer().getPlayerID()).getOutput(), "9~D~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
-                        this.sendMessage(this.clients.get(game.getOPlayer().getPlayerID()).getOutput(), "9~D~" +  + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
+                        this.sendMessage(this.clients.get(game.getXPlayer().getPlayerID()), "9~D~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
+                        this.sendMessage(this.clients.get(game.getOPlayer().getPlayerID()), "9~D~" +  + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
                         
                         // finish the game.
                         this.finishGame(gameID);
                     }
                     else {
                         // the move was accepted.
-                        this.sendMessage(this.clients.get(game.getXPlayer().getPlayerID()).getOutput(), "4~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
-                        this.sendMessage(this.clients.get(game.getOPlayer().getPlayerID()).getOutput(), "4~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
+                        this.sendMessage(this.clients.get(game.getXPlayer().getPlayerID()), "4~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
+                        this.sendMessage(this.clients.get(game.getOPlayer().getPlayerID()), "4~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
                     }             
+                }
+            }
+            // if the message is disconnect.
+            else if (splittedMessage[0].equals("7") && splittedMessage.length == 3) {
+                // get the message.
+                String message = splittedMessage[2];
+
+                if (message.equals("waiting")) {
+                    // get the size.
+                    String sizeStr = splittedMessage[1];
+                    int size;
+
+                    // checks if the size is from 0-9.
+                    if (sizeStr.length() == 1 && Character.isDigit(sizeStr.charAt(0))) {
+                        size = Integer.parseInt(sizeStr);
+
+                        // size 0 is not possible.
+                        if (size == 0) {
+                            this.sendMessage(client, "Error: board size must be an integer 1 - 9");
+                        }
+                        // size is correct.
+                        else {
+                            this.waitingClients[size - 1] = null;
+                        }
+                    }
+                    // close the client.
+                    this.closeClient(client.getSocket());
+                }
+                else {
+                    // get the name of the player.
+                    String name = splittedMessage[1];
+                    
+                    // get the playerID from the name.
+                    PlayerInfo player = this.dbHandler.getPlayerDB().getPlayer(name);
+
+                    if (player != null) {
+                        // get the playerID from the name.
+                        player = this.players.get(player.getID());
+
+                        // if the player has a game going on.
+                        if (player.getGameID() != -1) {
+
+                            // get the game from the playerID.
+                            Game game = this.games.get(player.getGameID());
+
+                            // get the winner and loser info.
+                            PlayerInfo playerWinner = player.getType().isX() ? game.getOPlayer() : game.getXPlayer();
+
+                            // send a message to inform the players that the game is over and that one won.
+                            System.out.println(this.clients.get(playerWinner.getPlayerID()).getSocket().toString());
+                            this.sendMessage(this.clients.get(playerWinner.getPlayerID()), "8~W~DC");
+                            
+                            // update the winner in the game.
+                            this.dbHandler.getGameDB().updateWinner(game.getID(), playerWinner.getPlayerID());
+                            
+                            // finish the game.
+                            this.finishGame(game);
+                        }
+                    }
                 }
             }
         }
@@ -235,8 +309,36 @@ public class Server {
         this.closeClient(this.clients.get(game.getXPlayer().getPlayerID()).getSocket());
         this.closeClient(this.clients.get(game.getOPlayer().getPlayerID()).getSocket());
 
+        // remove the clients from the hash map.
+        this.clients.remove(game.getXPlayer().getPlayerID());
+        this.clients.remove(game.getOPlayer().getPlayerID());
+
+        // remove the players from the hash map.
+        this.players.remove(game.getXPlayer().getPlayerID());
+        this.players.remove(game.getOPlayer().getPlayerID());
+
         // remove the game from the dictionary.
-        //this.games.remove(gameID);
+        this.games.remove(gameID);
+    }
+    private void finishGame(Game game) {
+
+        // finish the game.
+        game.gameOver();
+
+        // close the sockets.
+        this.closeClient(this.clients.get(game.getXPlayer().getPlayerID()).getSocket());
+        this.closeClient(this.clients.get(game.getOPlayer().getPlayerID()).getSocket());
+
+        // remove the clients from the hash map.
+        this.clients.remove(game.getXPlayer().getPlayerID());
+        this.clients.remove(game.getOPlayer().getPlayerID());
+
+        // remove the players from the hash map.
+        this.players.remove(game.getXPlayer().getPlayerID());
+        this.players.remove(game.getOPlayer().getPlayerID());
+
+        // remove the game from the dictionary.
+        this.games.remove(game.getID());
     }
     public static boolean isNumeric(String str) {
         // check if the number is numeric.
@@ -249,11 +351,11 @@ public class Server {
     }
 
     public void closeClient(Socket clientSocket) {
+        String ip = clientSocket.getInetAddress().getHostAddress();
         try {
             clientSocket.close();
+            System.out.println("Client disconnected: " + ip);
         } catch (IOException e) {
-            // TODO Auto-generated catch block
-            e.printStackTrace();
         }
     }
     private boolean canStartGame(int size, String name, ClientInfo client) {
@@ -285,6 +387,14 @@ public class Server {
         }
         return startGame;
     }
+    // private boolean hasClientJoined(String name) {
+    //     boolean clientJoined = false;
+    //     int i = 0;
+    //     ClientInfo[] c = (ClientInfo[])this.clients.values().toArray();
+    //     while (i < this.clients.size() && !clientJoined) {
+    //         clientJoined = c[i];
+    //     }
+    // }
     public static void main(String[] args) {
         new Server();
     }

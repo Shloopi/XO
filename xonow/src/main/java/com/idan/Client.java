@@ -43,11 +43,10 @@ public class Client implements Runnable {
             this.sendMessage("0~" + this.name + "~" + this.boardSize);
 
             String msg;
-            while (true) {
+            while (this.socket.isConnected()) {
                 msg = this.receiveMessage();
                 this.handleMessage(msg);
             }
-
            
         } catch (IOException e) {
             e.printStackTrace();
@@ -55,6 +54,7 @@ public class Client implements Runnable {
     }
     public void handleMessage(String msg) {
         if (msg != "") {
+            System.out.println("msg " + this.name + ": " + msg);
             String[] splittedMessage = msg.split("~");
 
             // if the message is 1, waiting.
@@ -143,6 +143,10 @@ public class Client implements Runnable {
                     Platform.runLater(() -> this.graphicsController.lose());
 
                 }
+            }
+            // if the game is over because of a disconnection.
+            else if (splittedMessage[0].equals("8") && splittedMessage.length ==  3) {
+                Platform.runLater(() -> this.graphicsController.win());
             }
         }
     }
