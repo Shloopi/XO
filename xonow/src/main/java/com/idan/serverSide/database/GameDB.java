@@ -2,10 +2,14 @@ package com.idan.serverSide.database;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.List;
 
 import com.idan.PlayerType;
+import com.idan.serverSide.entities.BaseEntity;
 import com.idan.serverSide.entities.Game;
 import com.idan.serverSide.entities.PlayerInfo;
+import com.idan.serverSide.entities.SqlEntity;
 
 public class GameDB extends DB {
 
@@ -19,81 +23,24 @@ public class GameDB extends DB {
         }
     }
 
-    public int insertGame(Game game) {
-        int gameID = -1;
-        try {
-            // try to insert the game.
-            PreparedStatement statement = this.connection.prepareStatement("INSERT INTO game (size, playerX, playerO) VALUES (?, ?, ?)", PreparedStatement.RETURN_GENERATED_KEYS);
-            statement.setInt(1, game.getSize());
-            statement.setInt(2, game.getXPlayer().getPlayerID());
-            statement.setInt(3, game.getOPlayer().getPlayerID());
-            statement.executeUpdate();
-    
-            // Retrieve the generated id.
-            ResultSet resultSet = statement.getGeneratedKeys();
-            if (resultSet.next()) {
-                gameID = resultSet.getInt(1);
-            }
-    
-            // Close resources
-            resultSet.close();
-            statement.close();
-        } catch (Exception e) {
-            System.out.println(e);
-        }
-        return gameID;
+    public void insertGame(Game game) {
+        this.insert(game);
+        this.saveChanges();
     }
-    public void deleteGame(int gameID) {
-        try {
-            // try to delete the game with the gameID.
-            PreparedStatement statement = this.connection.prepareStatement("DELETE FROM game WHERE gameID = ?");
-            statement.setInt(1, gameID);
-            statement.executeUpdate();
-            statement.close();
-        } catch (Exception e) {
-            System.out.println(e);
-        }
+    public void deleteGame(Game game) {
+        this.delete(game);
+        this.saveChanges();
     }
-    public void updateWinner(int gameID, int playerID) {
-        try {
-            // update the winner of the game.
-            String updateQuery = "UPDATE game SET playerWon = ? WHERE gameID = ?";
-            PreparedStatement statement = connection.prepareStatement(updateQuery);
-            statement.setInt(1, playerID);
-            statement.setInt(2, gameID);
-            statement.executeUpdate();
-
-            statement.close();
-        } catch (Exception e) {
-            System.out.println(e);
-        }
+    public void updateWinner(Game game) {
+        this.update(game);
+        this.saveChanges();
     }
-    public Game getGame(int gameID) {
-        Game game = null;
-        try {
-            // select the game from the id.
-            PreparedStatement statement = this.connection.prepareStatement("SELECT * FROM game WHERE gameID = ?");
-            statement.setInt(1, gameID);
 
-            // get the result.
-            ResultSet resultSet = statement.executeQuery();
+    public List<BaseEntity> getGame(int gameID) {
+        String sql = "SELECT * FROM games WHERE gameId = " + gameID;
+        List<BaseEntity> gameList = this.select(sql);
 
-            // if the result exists.
-            if (resultSet.next()) {
-                System.out.println("get the players:" + resultSet.getInt(3) + " " + resultSet.getInt(4));
-                // get the players' informations from the playerIDs.
-                PlayerInfo playerX = this.getPlayer(resultSet.getInt(3));
-                PlayerInfo playerO = this.getPlayer(resultSet.getInt(4));
-
-                game = new Game(playerX, playerO);
-            }
-
-            resultSet.close();
-            statement.close();
-        } catch (Exception e) {
-            System.out.println(e);
-        }
-        return game;
+        return gameList;
     }
     private PlayerInfo getPlayer(int playerID) {
         PlayerInfo player = null;
@@ -117,5 +64,57 @@ public class GameDB extends DB {
             System.out.println(e);
         }
         return player;
+    }
+
+    @Override
+    protected BaseEntity createModel(BaseEntity entity, ResultSet result) throws SQLException {
+        Game game = (Game)entity;
+        // if the result exists.
+        if (result.next()) {
+            // get the players' informations from the playerIDs.
+            PlayerInfo playerX = this.getPlayer(result.getInt(3));
+            PlayerInfo playerO = this.getPlayer(result.getInt(4));
+
+            game.addInfo(playerX, playerO);
+        }
+        return game;
+    }
+
+    
+    @Override
+    protected BaseEntity newEntity() {
+        return new Game();
+    }
+
+    @Override
+    public String insertQuery(BaseEntity entity) {
+        String sql = "";
+        if (entity instanceof Game) {
+            Game game = (Game) entity;
+
+            sql = "INSERT INTO game (size, playerX, playerO) VALUES (" + game.getSize() + ", " + game.getXPlayer().getPlayerID() + ", " + game.getOPlayer().getPlayerID() + ")";
+        }
+        return sql;
+    }
+
+    @Override
+    public String updateQuery(BaseEntity entity) {
+        String sql = "";
+        if (entity instanceof Game) {
+            Game game = (Game) entity;
+            PlayerInfo winner = game.checkWin().isX() ? game.getXPlayer() : game.getOPlayer();
+            sql = "UPDATE game SET playerWon = "+ winner.getPlayerID() + " WHERE gameID = " + game.getID();
+        }
+        return sql;
+    }
+
+    @Override
+    public String deleteQuery(BaseEntity entity) {
+        String sql = "";
+        if (entity instanceof Game) {
+            Game game = (Game)entity;
+            sql = "DELETE FROM game WHERE gameID = " + game.getID();
+        }
+        return sql;
     }
 }

@@ -121,7 +121,7 @@ public class gameController {
     }
     public void buttonClicked(int row, int column) {
         // if the turn is of this player.
-        if (!this.gameOver && (this.isX == this.isTurnX)) {
+        if (!this.gameOver && (this.isX == this.isTurnX) && this.buttons[row][column].getText().equals("")) {
             // send the move to the graphics controller.
             this.graphicsController.sendMove(row, column, isX);
         }

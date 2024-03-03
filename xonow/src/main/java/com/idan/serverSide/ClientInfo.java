@@ -26,4 +26,7 @@ public class ClientInfo {
     public OutputStream getOutput() {
         return this.output;
     }
+    public boolean equals(ClientInfo client) {
+        return this.socket.equals(client.getSocket());
+    }
 }

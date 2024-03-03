@@ -1,17 +1,19 @@
 package com.idan.serverSide.database;
 
+import java.util.HashMap;
+
 public class DBHandler {
-    private DB[] tables;
+    private HashMap<String, DB> tables;
 
     public DBHandler() {
-        this.tables = new DB[2];
-        this.tables[0] = new GameDB();
-        this.tables[1] = new PlayerDB();
+        this.tables = new HashMap<>();
+        this.tables.put("game", new GameDB());
+        this.tables.put("player", new PlayerDB());
     }
     public GameDB getGameDB() {
-        return (GameDB)this.tables[0];
+        return (GameDB)(this.tables.get("game"));
     }
     public PlayerDB getPlayerDB() {
-        return (PlayerDB)this.tables[1];
+        return (PlayerDB)(this.tables.get("player"));
     }
 }
