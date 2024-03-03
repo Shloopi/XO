@@ -5,6 +5,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 
 import com.idan.Move;
@@ -17,7 +19,7 @@ public class Server {
     private ServerSocket socket;
     private PlayerInfo[] waitingClients;
     private HashMap<Integer, ClientInfo> clients;
-    private HashMap<Integer, Game> games;
+    private ArrayList<GameManager> games;
     private HashMap<Integer, PlayerInfo> players;
     private final int PORT = 7486;
     private DBHandler dbHandler;
@@ -25,7 +27,7 @@ public class Server {
     public Server() {
         this.dbHandler = new DBHandler();
 
-        this.games = new HashMap<>();
+        this.games = new ArrayList<>();
         this.clients = new HashMap<>();
         this.players = new HashMap<>();
 
@@ -117,124 +119,131 @@ public class Server {
             // code 0 means get name and board size.
             if (splittedMessage[0].equals("0") && splittedMessage.length == 3) {
                 String name = splittedMessage[1];
-                String sizeStr = splittedMessage[2]; 
-                int size;
+                if (this.hasClientJoined(name)) {
+                    this.closeClient(client.getSocket());
+                }
+                else {
+                    String sizeStr = splittedMessage[2]; 
+                    int size;
 
-                // checks if the size is from 0-9.
-                if (sizeStr.length() == 1 && Character.isDigit(sizeStr.charAt(0))) {
-                    size = Integer.parseInt(sizeStr);
+                    // checks if the size is from 0-9.
+                    if (sizeStr.length() == 1 && Character.isDigit(sizeStr.charAt(0))) {
+                        size = Integer.parseInt(sizeStr);
 
-                    // size 0 is not possible.
-                    if (size == 0) {
-                        this.sendMessage(client, "Error: board size must be an integer 1 - 9");
-                    }
-                    // size is correct.
-                    else {
-                        // if the server can start a game.
-                        boolean canStartGame = this.canStartGame(size, name, client);
-
-                        // if the server can start a game. 
-                        if (!canStartGame) {
-                            this.sendMessage(client, "1~waiting");
+                        // size 0 is not possible.
+                        if (size == 0) {
+                            this.sendMessage(client, "Error: board size must be an integer 1 - 9");
                         }
+                        // size is correct.
                         else {
-                            // get the player from the db.
-                            PlayerInfo playerO = this.dbHandler.getPlayerDB().getPlayer(name);
+                            // if the server can start a game.
+                            boolean canStartGame = this.canStartGame(size, name, client);
 
-                            // if the player does not exist.
-                            if (playerO == null) {
-                                // insert the player into the db.
-                                playerO = this.dbHandler.getPlayerDB().getPlayer(this.dbHandler.getPlayerDB().insertPlayer(new PlayerInfo(name, size, PlayerType.getO())));
+                            // if the server can start a game. 
+                            if (!canStartGame) {
+                                this.sendMessage(client, "1~waiting");
                             }
+                            else {
+                                // get the player from the db.
+                                PlayerInfo playerO = this.dbHandler.getPlayerDB().getPlayer(name);
 
-                            // add the client to the hashmap.
-                            this.clients.put(playerO.getPlayerID(), client);
+                                // if the player does not exist.
+                                if (playerO == null) {
+                                    // insert the player into the db.
+                                    playerO = this.dbHandler.getPlayerDB().getPlayer(this.dbHandler.getPlayerDB().insertPlayer(new PlayerInfo(name, size, PlayerType.getO())));
+                                }
 
-                            // get the playerInfo for X player.
-                            PlayerInfo playerX = this.waitingClients[size - 1];
-                            this.waitingClients[size - 1] = null;
+                                // add the client to the hashmap.
+                                this.clients.put(playerO.getPlayerID(), client);
 
-                            // insert the game into the db.
-                            Game game = new Game(playerX, playerO);
-                            int gameID = this.dbHandler.getGameDB().insertGame(game);
-                            
-                            // add the game to the games hashmap.
-                            this.games.put(gameID, game);
-                            
-                            // send messages to the clients to start the game.
-                            this.sendMessage(this.clients.get(playerX.getPlayerID()), "2~" + gameID + "~X~" + name);
-                            this.sendMessage(client, "2~" + gameID + "~O~" + playerX.getName());
+                                // get the playerInfo for X player.
+                                PlayerInfo playerX = this.waitingClients[size - 1];
+                                this.waitingClients[size - 1] = null;
 
-                            // add the gameID into the information about the players.
-                            playerO.setGameID(gameID);
-                            playerX.setGameID(gameID);
+                                // insert the game into the db.
+                                Game game = new Game(playerX, playerO);
 
-                            // add the players to the hash map.
-                            this.players.put(playerX.getID(), playerX);
-                            this.players.put(playerO.getID(), playerO);
+                                // add the game to the db.
+                                this.dbHandler.getGameDB().insertGame(game);
+                                
+                                // add the game to the games hashmap.
+                                this.games.add(new GameManager(game, this.clients.get(playerX.getPlayerID()), client));
+                                
+                                // send messages to the clients to start the game.
+                                this.sendMessage(this.clients.get(playerX.getPlayerID()), "2~X~" + name);
+                                this.sendMessage(client, "2~O~" + playerX.getName());
+
+                                // add the gameID into the information about the players.
+                                //playerO.setGameID(gameID);
+                                //playerX.setGameID(gameID);
+
+                                // add the players to the hash map.
+                                this.players.put(playerX.getID(), playerX);
+                                this.players.put(playerO.getID(), playerO);
+                            }
                         }
                     }
                 }                
             }
             // if the server received a move.
-            else if (splittedMessage[0].equals("3") && splittedMessage.length == 5) {
-                int gameID, row, column;
+            else if (splittedMessage[0].equals("3") && splittedMessage.length == 4) {
+                int row, column;
 
                 // check if the gameID, row and columns are integers.
-                if (Server.isNumeric(splittedMessage[1]) && Server.isNumeric(splittedMessage[2]) && Server.isNumeric(splittedMessage[3])) {
+                if (Server.isNumeric(splittedMessage[1]) && Server.isNumeric(splittedMessage[2])) {
                     // save the variables.
-                    gameID = Integer.parseInt(splittedMessage[1]);
-                    row = Integer.parseInt(splittedMessage[2]);
-                    column = Integer.parseInt(splittedMessage[3]);
-                    String symbol = splittedMessage[4];
+                    row = Integer.parseInt(splittedMessage[1]);
+                    column = Integer.parseInt(splittedMessage[2]);
+                    String symbol = splittedMessage[3];
 
                     // create the move.
                     Move move = new Move(row, column, PlayerType.getType(symbol.charAt(0)));
                     
                     // get the game.
-                    Game game = this.games.get(gameID);
+                    Game game = this.getGame(client);
 
                     // add the move to the game.
-                    game.makeMove(move);
+                    if (game.makeMove(move)) {
 
-                    // check if a player has won.
-                    PlayerType winner = game.checkWin();
-                    if(winner != null) {
-                        System.out.println("PLAYER WON");
+                        // check if a player has won.
+                        PlayerType winner = game.checkWin();
+                        if(winner != null) {
+                            System.out.println("PLAYER WON");
 
-                        // get the winner and loser info.
-                        PlayerInfo playerWinner = winner.isX() ? game.getXPlayer() : game.getOPlayer();
-                        PlayerInfo playerLoser = winner.isX() ? game.getOPlayer() : game.getXPlayer();
+                            // get the winner and loser info.
+                            PlayerInfo playerWinner = winner.isX() ? game.getXPlayer() : game.getOPlayer();
+                            PlayerInfo playerLoser = winner.isX() ? game.getOPlayer() : game.getXPlayer();
 
-                        // update the winner in the game.
-                        this.dbHandler.getGameDB().updateWinner(gameID, playerWinner.getPlayerID());
+                            // update the winner in the game.
+                            this.dbHandler.getGameDB().updateWinner(game);
 
-                        // send a message to inform the players that the game is over and that one won.
-                        this.sendMessage(this.clients.get(playerWinner.getPlayerID()), "9~W~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
-                        this.sendMessage(this.clients.get(playerLoser.getPlayerID()), "9~L~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
-                        
-                        // finish the game.
-                        this.finishGame(gameID);
+                            // send a message to inform the players that the game is over and that one won.
+                            this.sendMessage(this.clients.get(playerWinner.getPlayerID()), "9~W~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
+                            this.sendMessage(this.clients.get(playerLoser.getPlayerID()), "9~L~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
+                            
+                            // finish the game.
+                            this.finishGame(game);
+                        }
+                        // check if the game is drawn.
+                        else if (game.checkDraw()) {
+                            System.out.println("DRAW");
+
+                            // update the winner in the game.
+                            this.dbHandler.getGameDB().updateWinner(game);
+
+                            // send a message to inform the players that the game is over and that it's a draw.
+                            this.sendMessage(this.clients.get(game.getXPlayer().getPlayerID()), "9~D~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
+                            this.sendMessage(this.clients.get(game.getOPlayer().getPlayerID()), "9~D~" +  + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
+                            
+                            // finish the game.
+                            this.finishGame(game);
+                        }
+                        else {
+                            // the move was accepted.
+                            this.sendMessage(this.clients.get(game.getXPlayer().getPlayerID()), "4~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
+                            this.sendMessage(this.clients.get(game.getOPlayer().getPlayerID()), "4~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
+                        }             
                     }
-                    // check if the game is drawn.
-                    else if (game.checkDraw()) {
-                        System.out.println("DRAW");
-
-                        // update the winner in the game.
-                        this.dbHandler.getGameDB().updateWinner(gameID, 0);
-
-                        // send a message to inform the players that the game is over and that it's a draw.
-                        this.sendMessage(this.clients.get(game.getXPlayer().getPlayerID()), "9~D~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
-                        this.sendMessage(this.clients.get(game.getOPlayer().getPlayerID()), "9~D~" +  + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
-                        
-                        // finish the game.
-                        this.finishGame(gameID);
-                    }
-                    else {
-                        // the move was accepted.
-                        this.sendMessage(this.clients.get(game.getXPlayer().getPlayerID()), "4~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
-                        this.sendMessage(this.clients.get(game.getOPlayer().getPlayerID()), "4~" + move.getRow() + "~" + move.getColumn() + "~" + move.getPlayerType().getSymbol());
-                    }             
                 }
             }
             // if the message is disconnect.
@@ -278,7 +287,7 @@ public class Server {
                         if (player.getGameID() != -1) {
 
                             // get the game from the playerID.
-                            Game game = this.games.get(player.getGameID());
+                            Game game = this.getGame(client);
 
                             // get the winner and loser info.
                             PlayerInfo playerWinner = player.getType().isX() ? game.getOPlayer() : game.getXPlayer();
@@ -288,7 +297,7 @@ public class Server {
                             this.sendMessage(this.clients.get(playerWinner.getPlayerID()), "8~W~DC");
                             
                             // update the winner in the game.
-                            this.dbHandler.getGameDB().updateWinner(game.getID(), playerWinner.getPlayerID());
+                            this.dbHandler.getGameDB().updateWinner(game);
                             
                             // finish the game.
                             this.finishGame(game);
@@ -298,27 +307,15 @@ public class Server {
             }
         }
     }
-    private void finishGame(int gameID) {
-        // get the game.
-        Game game = this.dbHandler.getGameDB().getGame(gameID);
-
-        // finish the game.
-        game.gameOver();
-
-        // close the sockets.
-        this.closeClient(this.clients.get(game.getXPlayer().getPlayerID()).getSocket());
-        this.closeClient(this.clients.get(game.getOPlayer().getPlayerID()).getSocket());
-
-        // remove the clients from the hash map.
-        this.clients.remove(game.getXPlayer().getPlayerID());
-        this.clients.remove(game.getOPlayer().getPlayerID());
-
-        // remove the players from the hash map.
-        this.players.remove(game.getXPlayer().getPlayerID());
-        this.players.remove(game.getOPlayer().getPlayerID());
-
-        // remove the game from the dictionary.
-        this.games.remove(gameID);
+    private Game getGame(ClientInfo client) {
+        Game game = null;
+        for (GameManager gm : this.games) {
+            game = gm.getGame(client);
+            if (game != null) {
+                return game;
+            }
+        }
+        return game;
     }
     private void finishGame(Game game) {
 
@@ -387,14 +384,17 @@ public class Server {
         }
         return startGame;
     }
-    // private boolean hasClientJoined(String name) {
-    //     boolean clientJoined = false;
-    //     int i = 0;
-    //     ClientInfo[] c = (ClientInfo[])this.clients.values().toArray();
-    //     while (i < this.clients.size() && !clientJoined) {
-    //         clientJoined = c[i];
-    //     }
-    // }
+    private boolean hasClientJoined(String name) {
+        boolean clientJoined = false;
+        Collection<PlayerInfo> p = this.players.values();
+        int i = 0;
+        for (PlayerInfo player : p) {
+            if (!clientJoined) {
+                clientJoined = name.equals(player.getName());
+            }
+        }
+        return clientJoined;
+    }
     public static void main(String[] args) {
         new Server();
     }

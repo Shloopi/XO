@@ -12,6 +12,10 @@ public class Game extends BaseEntity {
 
     private byte[][] board;
 
+    public Game() {
+        super();
+        Game.gameCounter++;
+    }
     public Game(PlayerInfo p1, PlayerInfo p2) {
         super();
         Game.gameCounter++;
@@ -30,6 +34,22 @@ public class Game extends BaseEntity {
                 board[i][j] = 0;
 
     }
+    public void addInfo(PlayerInfo p1, PlayerInfo p2) {
+        this.xPlayer = p1;
+        this.oPlayer = p2;
+        this.isOver = false;
+
+        // get the size of the board.
+        this.size = this.xPlayer.getSize();
+
+        // set the board.
+        board = new byte[this.size][this.size];
+
+        for (int i = 0; i < this.size; i++)
+            for (int j = 0; j < this.size; j++)
+                board[i][j] = 0;
+
+    };
     public static int getGameCounter() {
         return Game.gameCounter;
     }
@@ -124,7 +144,7 @@ public class Game extends BaseEntity {
     }
     public boolean makeMove(Move move) {
         // if the game is not over and if the move is valid.
-        boolean moveMade = !this.isOver && this.isValid(move); 
+        boolean moveMade = !this.isOver && this.isValid(move) && this.board[move.getRow()][move.getColumn()] == 0; 
 
         if (moveMade) {            
             // add the value to the grid. 

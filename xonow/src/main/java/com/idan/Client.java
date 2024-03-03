@@ -18,7 +18,6 @@ public class Client implements Runnable {
     private int boardSize;
     private Move move;
     private boolean isYourMove;
-    private int gameID;
     private boolean isX;
     private graphics graphicsController;
 
@@ -69,11 +68,10 @@ public class Client implements Runnable {
                 });
             }
             // if the message 2, start game.
-            else if (splittedMessage[0].equals("2") && splittedMessage.length == 4) {
+            else if (splittedMessage[0].equals("2") && splittedMessage.length == 3) {
                 // get the game id, X or O and get the opponent's name.
-                this.gameID = Integer.parseInt(splittedMessage[1]);
-                this.isX = splittedMessage[2].equals("X");
-                String opponentName = splittedMessage[3];
+                this.isX = splittedMessage[1].equals("X");
+                String opponentName = splittedMessage[2];
 
                 // call the graphics to start the game.
                 Platform.runLater(() -> {
@@ -164,7 +162,7 @@ public class Client implements Runnable {
         System.out.println("client: Sending Move");
         // send the move to the server. 
         try {
-            sendMessage("3~" + this.gameID + "~" + this.move.getRow() + "~" + this.move.getColumn() + "~" + this.move.getPlayerType().getSymbol());
+            sendMessage("3~" + this.move.getRow() + "~" + this.move.getColumn() + "~" + this.move.getPlayerType().getSymbol());
         } catch (IOException e) {
             e.printStackTrace();
         }

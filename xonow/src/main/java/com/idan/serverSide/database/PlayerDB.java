@@ -2,8 +2,11 @@ package com.idan.serverSide.database;
 
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 
 import com.idan.PlayerType;
+import com.idan.serverSide.entities.BaseEntity;
+import com.idan.serverSide.entities.Game;
 import com.idan.serverSide.entities.PlayerInfo;
 
 public class PlayerDB extends DB {
@@ -124,5 +127,49 @@ public class PlayerDB extends DB {
             System.out.println(e);
         }
         return player;
+    }
+    @Override
+    protected BaseEntity createModel(BaseEntity entity, ResultSet result) throws SQLException {
+        PlayerInfo player = (PlayerInfo)entity;
+        // if the result exsist.
+        if (result.next()) {
+            // create the playerInfo from the information in the DB.
+            player.addInfo(result.getInt("playerID"), result.getString("name"), result.getInt("size"), PlayerType.getType((byte)result.getInt("type")));
+        }
+        return player;
+    }
+    @Override
+    public String insertQuery(BaseEntity entity) {
+        String sql = "";
+        if (entity instanceof PlayerInfo) {
+            PlayerInfo player = (PlayerInfo) entity;
+
+            sql = "INSERT INTO player (size, name, type) VALUES (" + player.getSize() + ", " + player.getName() + ", " + player.getType().getValue() + ")";
+        }
+        return sql;
+    }
+    @Override
+    protected BaseEntity newEntity() {
+        return new PlayerInfo();
+    }
+    @Override
+    public String updateQuery(BaseEntity entity) {
+        String sql = "";
+        if (entity instanceof PlayerInfo) {
+            PlayerInfo player = (PlayerInfo) entity;
+
+            sql = "UPDATE player SET size = " + player.getSize() + "WHERE playerID = " + player.getPlayerID();
+        }
+        return sql;
+    }
+    @Override
+    public String deleteQuery(BaseEntity entity) {
+        String sql = "";
+        if (entity instanceof PlayerInfo) {
+            PlayerInfo player = (PlayerInfo) entity;
+
+            sql = "DELETE FROM player WHERE playerID = " + player.getPlayerID();
+        }
+        return sql;
     }
 }
