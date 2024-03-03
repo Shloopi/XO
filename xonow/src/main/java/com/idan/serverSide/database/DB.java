@@ -20,7 +20,7 @@ public class DB {
     private void connectSql() {
         String url = "jdbc:mysql://localhost:3306/xoFinal?serverTimezone=Asia/Jerusalem";
         String username = "root";
-        String password = "Shloopi210405";
+        String password = "ENTER PASSWORD";
         try {
             Class.forName("com.mysql.cj.jdbc.Driver");
             this.connection = DriverManager.getConnection(url, username, password);
